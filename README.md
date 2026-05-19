@@ -185,5 +185,3 @@ To safely execute generated machine byte arrays on host operating platforms, you
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)** - feel free to review included repository headers for open-source development compliance rules.
 
 ```
-
-```
