@@ -1,4 +1,4 @@
-```markdown
+
 # SOFT & RAIN: Multi-Architecture Transpiler & JIT Compiler Engine 🌧️⚡
 
 SOFT & RAIN is a high-performance, zero-dependency, header-only JIT compiler core and low-level runtime infrastructure written in pure C99. It bridges a high-level pseudo-assembly virtual interface (**SOFT IR**) with ultra-fast, native hardware machine code emission (**RAIN Encoder Matrix**) targeting **x86_64**, **ARM64 (AArch64)**, and **RISC-V (RV64GC)** hardware architectures simultaneously.
