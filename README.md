@@ -1,178 +1,160 @@
+# RAIN (Multi-Architecture JIT Byte Encoder) 🌧️
 
-# rain
-Rain is a lightweight, dependency-free JIT compiler written in pure C code. It's a library capable of generating code specific to RISCV, x86_64, and ARM processors (more to come). You can use it to create your own compilers and dynamic libraries (there are many use cases).
+RAIN is a zero-dependency, header-only, lightning-fast JIT (Just-In-Time) compiler core and machine code emitter written in pure C99. It programmatically compiles assembly-like instruction structures into executable, raw native machine code arrays for **x86_64**, **ARM64 (AArch64)**, and **RISC-V (RV64GC)** architectures simultaneously.
 
-# keywords
-jit-compiler assembler x86-64 arm64 riscv systems-programming compiler-design hardware-architecture
-
-# how to use
+Whether you are building a custom programming language compiler backend, an optimized virtual machine, an emulator, or a runtime execution engine running directly on custom silicon/FPGA architectures, RAIN provides a minimalist, bare-metal interface to emit valid CPU instructions on the fly.
 
 ---
 
-## Core Structures & Initialization
+## 🚀 What's New in the Latest Version
 
-### Memory Buffer (`rain_bin_t`)
-Dinamically growing byte buffer used to accumulate emitted machine instructions.
-* `void rain_bin_init(rain_bin_t *bin)`: Allocates or sets null states for a new binary container.
-* `void rain_bin_free(rain_bin_t *bin)`: Safely releases the internal data cache from standard heap.
-* `void rain_bin_append(rain_bin_t *bin, const uint8_t *bytes, size_t len)`: Appends raw bytes directly to the execution pipeline.
-
-### Operand System (`rain_operand_t`)
-Encapsulates register codes, immediate integers, and explicit memory offsets.
-* `RAIN_OP_REG`: Physical register tracking.
-* `RAIN_OP_IMM`: Raw tamsayı limits (8-bit to 64-bit bounds).
-* `RAIN_OP_MEM`: Base register with custom scale displacement.
+* **Advanced Native FFI (Foreign Function Interface):** RAIN now natively supports calling standard C host functions (e.g., `printf`, `malloc`, `exit`) directly from within your injected JIT compiled byte streams. 
+* **Symbolic Function Registration:** Introducing `rain_register_c_func` and `rain_get_c_func` to dynamically map text labels to explicit runtime memory function pointers across all backends.
+* **Architecture-Specific C Call Bridges:** New zero-overhead functional wrappers implemented:
+  * `rain_x86_call_c(bin, "function_name")`
+  * `rain_arm64_call_c(bin, "function_name")`
+  * `rain_riscv_call_c(bin, "function_name")`
+* **Expanded RISC-V Support:** Added full encoder pipeline capabilities for `rain_riscv_li` (Load Immediate pseudo-instruction handling) and `rain_riscv_jalr` linking for dynamic function jumps.
 
 ---
 
-## Comprehensive Instruction Set & API Commands
+## Pipeline Architecture
 
-RAIN utilizes a macro-overloading mechanism (`RAIN_GET_MACRO`). You call the same function identifier, and C automatically evaluates the argument count to call the appropriate internal layout encoder signature (`_2`, `_3`, `_4`).
+RAIN bypasses heavy, slow intermediate formats like LLVM IR, translating logical commands straight into absolute machine bytes.
 
-### 1. x86_64 Architecture Reference
-Call Wrapper: `rain_x86_64_compiler(bin, command, ...)`
+## Technical Feature Overview
 
-#### Available Instruction Opcodes (`rain_x86_64_cmd_t`):
-* `rain_x86_64_mov`: Move source to destination register or imm byte.
-* `rain_x86_64_add`: Binary integer addition.
-* `rain_x86_64_sub`: Binary integer subtraction.
-* `rain_x86_64_mul`: Unsigned/Signed multiplication via ModRM extension.
-* `rain_x86_64_div`: Unsigned/Signed division.
-* `rain_x86_64_push`: Pushes register operand into Stack frame.
-* `rain_x86_64_pop`: Pops top stack value out to designated destination register.
-* `rain_x86_64_ret`: Return from near procedure (Emits `0xC3`).
-* `rain_x86_64_xor`: Bitwise logical exclusive OR.
-* `rain_x86_64_cmp`: Compares operands by setting internal EFLAGS status registers.
-* `rain_x86_64_jmp`: Unconditional near code jumping via raw displacement values.
-* `rain_x86_64_jz`: Jump near if zero status condition flag is toggled.
-* `rain_x86_64_je`: Jump near if equal condition matches.
-* `rain_x86_64_jl`: Jump near if arithmetic comparison is less than target.
-* `rain_x86_64_jg`: Jump near if arithmetic comparison is greater than target.
-* `rain_x86_64_call`: Executes system relative or absolute location calls.
-
-#### Physical Register Map Reference (`rain_x86_64_reg_t`):
-* **64-Bit General Registers:** `rain_x86_64_rax`, `rain_x86_64_rcx`, `rain_x86_64_rdx`, `rain_x86_64_rbx`, `rain_x86_64_rsp`, `rain_x86_64_rbp`, `rain_x86_64_rsi`, `rain_x86_64_rdi`, `rain_x86_64_r8` through `rain_x86_64_r15`.
-* **32-Bit Registers:** `rain_x86_64_eax`, `rain_x86_64_ecx`, `rain_x86_64_edx`, etc.
-* **16-Bit Registers:** `rain_x86_64_ax`, `rain_x86_64_cx`, `rain_x86_64_dx`, etc.
-* **8-Bit Low Registers:** `rain_x86_64_al`, `rain_x86_64_cl`, `rain_x86_64_dl`, `rain_x86_64_bl`.
+* **Header-Only Integration:** Zero boilerplate. Dropping a single `#include "rain.h"` file into your codebase is all it takes.
+* **No Dependencies:** Relies strictly on standard freestanding library footprints (`stdint.h`, `stdlib.h`, `string.h`).
+* **Macro Overloading Engine:** Uses internal `RAIN_GET_MACRO` branching signatures to evaluate parameter lengths automatically at compile time, reducing interface clutter.
+* **Safe Dynamic Buffering:** Managed via the `rain_bin_t` structure, dynamically resizing memory allocations safely as instructions accumulate.
 
 ---
 
-### 2. ARM64 / AArch64 Architecture Reference
-Call Wrapper: `rain_arm64_compiler(bin, command, ...)`
+## Core Structures & Memory Control API
 
-#### Available Instruction Opcodes (`rain_arm64_cmd_t`):
-* `rain_arm64_mov`: Moves imm16 shifts or basic register states.
-* `rain_arm64_add`: Register + Register or Register + Imm12 arithmetic addition.
-* `rain_arm64_sub`: Register - Register or Register - Imm12 arithmetic subtraction.
-* `rain_arm64_mul`: Emits 32-bit hardware multiply sequences (`MADD` mapped mask).
-* `rain_arm64_div`: Hardware integer signed/unsigned division commands (`SDIV`/`UDIV`).
-* `rain_arm64_ldr`: Load register values from base index memory scopes.
-* `rain_arm64_str`: Store register value directly into target hardware memory locations.
-* `rain_arm64_ret`: Subroutine return execution (Emits unconditional link branch pointer `0xD65F03C0`).
+### 1. Execution Buffer (`rain_bin_t`)
+Maintains the raw memory cache array for emitted byte opcodes.
+* `void rain_bin_init(rain_bin_t *bin)`: Allocates or sets null state for a safe compilation context.
+* `void rain_bin_free(rain_bin_t *bin)`: Frees internal data cache from standard heap allocations safely.
+* `void rain_bin_append(rain_bin_t *bin, const uint8_t *bytes, size_t len)`: Direct interface to append arbitrary custom byte sequences into the pipeline.
 
-#### Physical Register Map Reference (`rain_arm64_reg_t`):
-* **64-Bit Core Registers:** `rain_arm64_x0` through `rain_arm64_x30`.
-* **Special Registers:** `rain_arm64_sp` (Stack Pointer), `rain_arm64_xzr` (Zero Constant Register).
+### 2. Universal Operands (`rain_operand_t`)
+Encapsulates different structural arguments needed by hardware instructions.
+* `RAIN_OP_REG`: Marks target parameter as a hardware register asset.
+* `RAIN_OP_IMM`: Contains raw signed/unsigned immediate integer constants.
+* `RAIN_OP_MEM`: Sets complex base-register addressing memory modes with standard offset displacements.
 
 ---
 
-### 3. RISC-V Architecture Reference
-Call Wrapper: `rain_riscv_compiler(bin, command, ...)`
+## Comprehensive Architecture Instruction Map
 
-#### Available Instruction Opcodes (`rain_riscv_cmd_t`):
-* `rain_riscv_add` / `rain_riscv_addi`: Register-Register / Register-Immediate sign-extended additions.
-* `rain_riscv_sub`: Traditional two's complement subtract routine blocks.
-* `rain_riscv_mul`: R-Type standard base extension signed multiply module mapping.
-* `rain_riscv_div`: Hardware-level signed division core instructions.
-* `rain_riscv_lw`: Load Word (32-bit offset mapping extraction).
-* `rain_riscv_ld`: Load Doubleword (64-bit standard base loading).
-* `rain_riscv_sw`: Store Word payload down into aligned target sectors.
-* `rain_riscv_sd`: Store Doubleword state pipeline tracking.
-* `rain_riscv_jal`: Jump And Link (Relative distance code branch mechanism).
-* `rain_riscv_jalr`: Jump And Link Register (Indirect function jumps).
-* `rain_riscv_ret`: Pseudo-instruction expansion to return immediately (Emits `0x00008067`).
-* `rain_riscv_ecall`: Operating system environment trap interface triggers (Emits `0x00000073`).
-* `rain_riscv_nop`: No-operation instruction (Emits base code `0x00000013`).
+### A. x86_64 Core Engine (`rain_x86_64_compiler`)
+* **Supported Instructions:** `mov`, `add`, `sub`, `mul` (via custom ModRM layout extensions), `div`, `push`, `pop`, `ret` (`0xC3`), `xor`, `cmp`, `jmp`, `jz`, `je`, `jl`, `jg`, and `call`.
+* **Register Map:** Supports full bit-width scaling configurations:
+  * *64-bit Registers:* `rain_x86_64_rax`, `rcx`, `rdx`, `rbx`, `rsp`, `rbp`, `rsi`, `rdi`, `r8` through `r15`.
+  * *32-bit Registers:* `rain_x86_64_eax`, `ecx`, `edx`, etc.
+  * *16-bit Registers:* `rain_x86_64_ax`, `cx`, `dx`, etc.
+  * *8-bit Registers:* `rain_x86_64_al`, `cl`, `dl`, `bl`.
 
-#### Physical Register Map Reference (`rain_riscv_reg_t`):
-* `rain_riscv_x0` / `rain_riscv_zero`: Hardwired zero value constant.
-* `rain_riscv_x1` / `rain_riscv_ra`: Function execution link return address.
-* `rain_riscv_x2` / `rain_riscv_sp`: Active system stack alignment frame pointer.
-* `rain_riscv_x10` - `rain_riscv_x17` (`rain_riscv_a0` - `rain_riscv_a7`): Function entry parameters and return results.
-* Full sequence tracking available from `rain_riscv_x0` directly through to `rain_riscv_x31`.
+### B. ARM64 / AArch64 Engine (`rain_arm64_compiler`)
+* **Supported Instructions:** `mov` (shift variations optimized), `add`, `sub`, `mul` (mapped through hardware `MADD` masks), `div` (`SDIV`/`UDIV` choices), `ldr` (load register), `str` (store register), `ret` (`0xD65F03C0`), and `blr` (Branch with Link to Register).
+* **Register Map:** * *Core general-purpose:* `rain_arm64_x0` through `rain_arm64_x30`.
+  * *Specialized:* `rain_arm64_sp` (Stack Pointer) and `rain_arm64_xzr` (Zero Constant Register).
+
+### C. RISC-V 64 Engine (`rain_riscv_compiler`)
+* **Supported Instructions:** `add`, `addi`, `sub`, `mul`, `div`, `lw` (Load Word), `ld` (Load Doubleword), `sw` (Store Word), `sd` (Store Doubleword), `jal` (Jump and Link), `jalr` (Jump and Link Register), `ret` (`0x00008067`), `ecall` (System Environment Trap), `nop` (`0x00000013`), and `li` (Load Immediate pseudo-op scaling).
+* **Register Map:** Fully compliant with standard RISC-V ABI conventions:
+  * `rain_riscv_x0` / `zero` (Hardwired Zero).
+  * `rain_riscv_x1` / `ra` (Return Link Address).
+  * `rain_riscv_x2` / `sp` (Stack Frame Pointer).
+  * `rain_riscv_x10` through `rain_riscv_x17` (`a0` - `a7` parameter lanes), spanning out completely through `rain_riscv_x31`.
 
 ---
 
-## Step-by-Step Programming Example
+## Production Verification Example (JIT + Native FFI)
 
-Below is a complete, compilable C verification file (`main.c`) demonstrating how to use `rain.h` to programmatically emit machine instructions for all three hardware architectures inside a single application.
+This complete, standalone C program showcases how to emit code for all platforms and demonstrates the **new FFI capability** to branch straight into a native C host function from your JIT engine context.
+
+---
 
 ```c
 #include <stdio.h>
 #include "rain.h"
 
-void dump_binary_hex(const char *title, const rain_bin_t *bin) {
-    printf("--- %s Hex Dump (%zu bytes) ---\\n", title, bin->size);
+// The native C function we want to invoke from within the JIT execution stream
+void host_print_callback() {
+    printf("[FFI Match] Hello from RAIN's JIT Environment Core!\\n");
+}
+
+void print_hex_output(const char *platform_name, const rain_bin_t *bin) {
+    printf("=== %s Machine Byte Array (%zu bytes) ===\\n", platform_name, bin->size);
     for (size_t i = 0; i < bin->size; i++) {
         printf("%02X ", bin->data[i]);
-        if ((i + 1) % 16 == 0) printf("\\n");
     }
-    if (bin->size % 16 != 0) printf("\\n");
-    printf("\\n");
+    printf("\\n\\n");
 }
 
 int main() {
     // ------------------------------------------------------------------------
-    // Scenario 1: Target Generation for Intel/AMD x86_64
+    // SETUP: Register the Host C function into RAIN's Internal Symbol Map
     // ------------------------------------------------------------------------
-    rain_bin_t x86_program;
-    rain_bin_init(&x86_program);
-
-    // mov rax, 100         -> Load immediate 100 into RAX register
-    rain_x86_64_compiler(&x86_program, rain_x86_64_mov, rain_x86_64_rax, rain_x86_64_imd(100));
-    
-    // add rax, rcx         -> Add values inside RCX to RAX
-    rain_x86_64_compiler(&x86_program, rain_x86_64_add, rain_x86_64_rax, rain_x86_64_rcx);
-    
-    // ret                 -> Near procedure exit sequence
-    rain_x86_64_compiler(&x86_program, rain_x86_64_ret);
-
-    dump_binary_hex("x86_64 JIT Pipeline Output", &x86_program);
-    rain_bin_free(&x86_program);
+    rain_register_c_func("host_print_callback", (void*)&host_print_callback);
 
     // ------------------------------------------------------------------------
-    // Scenario 2: Target Generation for ARM64 (AArch64 / Apple Silicon / Pi)
+    // 1. INTEL/AMD x86_64 JIT Pipeline with Native FFI Call
     // ------------------------------------------------------------------------
-    rain_bin_t arm64_program;
-    rain_bin_init(&arm64_program);
+    rain_bin_t x86_ctx;
+    rain_bin_init(&x86_ctx);
 
-    // mov x0, #42          -> Load intermediate 42 directly to X0
-    rain_arm64_compiler(&arm64_program, rain_arm64_mov, rain_arm64_x0, rain_arm64_imd(42));
+    // mov rax, 500
+    rain_x86_64_compiler(&x86_ctx, rain_x86_64_mov, rain_x86_64_rax, rain_x86_64_imd(500));
+    // add rax, rcx
+    rain_x86_64_compiler(&x86_ctx, rain_x86_64_add, rain_x86_64_rax, rain_x86_64_rcx);
     
-    // add x0, x0, x1       -> Standard core registration sum mapping
-    rain_arm64_compiler(&arm64_program, rain_arm64_add, rain_arm64_x0, rain_arm64_x0, rain_arm64_x1);
+    // NEW: Call native C function safely bridging System V ABI parameters
+    rain_x86_call_c(&x86_ctx, "host_print_callback");
     
-    // ret                 -> Branch register link code completion
-    rain_arm64_compiler(&arm64_program, rain_arm64_ret);
-
-    dump_binary_hex("ARM64 JIT Pipeline Output", &arm64_program);
-    rain_bin_free(&arm64_program);
+    // ret
+    rain_x86_64_compiler(&x86_ctx, rain_x86_64_ret);
+    print_hex_output("x86_64 Target", &x86_ctx);
+    rain_bin_free(&x86_ctx);
 
     // ------------------------------------------------------------------------
-    // Scenario 3: Target Generation for Custom RISC-V Processors / Emulators
+    // 2. ARM64 (Apple Silicon / Raspberry Pi) Target Stream
     // ------------------------------------------------------------------------
-    rain_bin_t riscv_program;
-    rain_bin_init(&riscv_program);
+    rain_bin_t arm64_ctx;
+    rain_bin_init(&arm64_ctx);
 
-    // addi x10, x10, 5     -> Add immediate 5 directly inside argument register A0
-    rain_riscv_compiler(&riscv_program, rain_riscv_addi, rain_riscv_x10, rain_riscv_x10, rain_riscv_imd(5));
+    // mov x0, 75
+    rain_arm64_compiler(&arm64_ctx, rain_arm64_mov, rain_arm64_x0, rain_arm64_imd(75));
+    // add x0, x0, x1
+    rain_arm64_compiler(&arm64_ctx, rain_arm64_add, rain_arm64_x0, rain_arm64_x0, rain_arm64_x1);
     
-    // ret                 -> Unconditional target jump pipeline clearance
-    rain_riscv_compiler(&riscv_program, rain_riscv_ret);
+    // NEW: Branch out directly to native C host function
+    rain_arm64_call_c(&arm64_ctx, "host_print_callback");
+    
+    // ret
+    rain_arm64_compiler(&arm64_ctx, rain_arm64_ret);
+    print_hex_output("ARM64 Target", &arm64_ctx);
+    rain_bin_free(&arm64_ctx);
 
-    dump_binary_hex("RISC-V Custom SoC JIT Pipeline Output", &riscv_program);
-    rain_bin_free(&riscv_program);
+    // ------------------------------------------------------------------------
+    // 3. RISC-V 64 Custom Processor / Emulator Core Target
+    // ------------------------------------------------------------------------
+    rain_bin_t riscv_ctx;
+    rain_bin_init(&riscv_ctx);
+
+    // addi a0, a0, 25
+    rain_riscv_compiler(&riscv_ctx, rain_riscv_addi, rain_riscv_x10, rain_riscv_x10, rain_riscv_imd(25));
+    
+    // NEW: Jump and load via RISC-V runtime FFI execution map
+    rain_riscv_call_c(&riscv_ctx, "host_print_callback");
+    
+    // ret
+    rain_riscv_compiler(&riscv_ctx, rain_riscv_ret);
+    print_hex_output("RISC-V Custom SoC Target", &riscv_ctx);
+    rain_bin_free(&riscv_ctx);
 
     return 0;
 }
