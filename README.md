@@ -25,8 +25,6 @@ RAIN completely bypasses heavy intermediate representation graphs (like LLVM IR)
 
 
 ```
-
-```
          [ User-Defined Dynamic Assembly Instructions ]
                                │
                                ▼
