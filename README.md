@@ -39,8 +39,6 @@ RAIN completely bypasses heavy intermediate representation graphs (like LLVM IR)
 (Intel / AMD)             (Apple Silicon)          (Custom 64-bit SoC)
 (REX/ModRM/SIB)            (32-bit Encoded)          (Standard RV64GC)
 
-```
-
 ---
 
 ## Core Structures & Memory Management
