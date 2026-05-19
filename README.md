@@ -1,158 +1,173 @@
 
-# SOFT & RAIN: Multi-Architecture Transpiler & JIT Compiler Engine 🌧️⚡
+# RAIN: Multi-Architecture JIT Byte Encoder Engine 🌧️⚡
 
-SOFT & RAIN is a high-performance, zero-dependency, header-only JIT compiler core and low-level runtime infrastructure written in pure C99. It bridges a high-level pseudo-assembly virtual interface (**SOFT IR**) with ultra-fast, native hardware machine code emission (**RAIN Encoder Matrix**) targeting **x86_64**, **ARM64 (AArch64)**, and **RISC-V (RV64GC)** hardware architectures simultaneously.
+RAIN is a zero-dependency, ultra-fast, header-only JIT (Just-In-Time) compiler core and machine code emitter written in pure C99. It allows you to programmatically compile assembly-structured instructions into executable, raw native machine code arrays for **x86_64**, **ARM64 (AArch64)**, and **RISC-V (RV64GC)** architectures simultaneously.
 
-The ecosystem is split into two co-dependent layers:
-1. **SOFT Platform (`soft.h`):** A domain-aware, safe stack-virtual machine executing abstract structural register and memory commands.
-2. **RAIN Core Engine (`rain.h`):** A zero-abstraction bitwise macro-overloaded JIT byte encoder compiling operations directly to hardware-executable arrays.
+RAIN completely bypasses heavy intermediate representation graphs (like LLVM IR), performing high-speed bitwise transformation from structural functional calls straight to hardware-executable bytes. It is specifically tailored for lightweight virtual machine backends, custom scripting runtimes, emulator pipelines, or custom silicon design emulation (such as 2.4GHz FPGA SoC architectures).
 
 ---
 
 ## 🚀 What's New in the Latest Version
 
-* **Advanced Native FFI Ecosystem:** Complete functional integration of `rain_register_c_func` and `rain_get_c_func` across all code emitters, providing dynamic host runtime callback registration.
-* **Architecture-Specific Call Bridges:** Introduced direct bare-metal wrappers to escape JIT threads straight into standard C hooks (`printf`, `malloc`, etc.):
-  * `rain_x86_call_c(bin, "function_name")`
-  * `rain_arm64_call_c(bin, "function_name")`
-  * `rain_riscv_call_c(bin, "function_name")`
-* **Textual File Parsing Pipeline (`soft-asm.c`):** An asynchronous, string-tokenizing scripting parser to swallow raw code scripts on-disk, parse scope labels, and emit complete multi-architecture binary images (`.bin`).
-* **Multi-Syscall Integration:** Added `SOFT_MULTISYSCALL` operation maps inside the virtual machine core to aggregate transactional host operating system traps cleanly.
+* **Advanced Host C-Function FFI Bridge:** Native capability to branch out from JIT-compiled byte arrays straight into host C functions (e.g., `printf`, `malloc`) using safe hardware execution boundaries.
+* **Symbolic Reference Lookups:** Integrated symbol lookup engine via `rain_register_c_func` and `rain_get_c_func` to dynamically match runtime text strings to active memory function pointers.
+* **Architecture-Specific C Call Macros:** Zero-overhead invocation bridges optimized for ABI register structures:
+  * `rain_x86_call_c(bin, "function_name")` -> Emits dynamic `mov` to intermediate registers followed by a near `call`.
+  * `rain_arm64_call_c(bin, "function_name")` -> Bridges address pointers via register `x16` utilizing branch-with-link (`blr`).
+  * `rain_riscv_call_c(bin, "function_name")` -> Emits custom load-immediate (`li`) across temporary register `x5` tracking indirect jump-and-link (`jalr`).
+* **Expanded Hardware Instructions:** Full native bit-mask tracking for RISC-V `rain_riscv_li` pseudo-ops and strict ARM64 register state validation layouts.
 
 ---
 
-## Pipeline & Architecture Flow
+## Technical Architecture Pipeline
 
-The engine completely bypasses heavy internal abstraction graphs (like LLVM or GCC IR), performing single-pass translation from virtual variables down to raw machine bits.
+
 
 
 ```
 
-[ Raw Script File / SOFT Instruction Stream ]
-│
-▼
-[ SOFT Tokenizing & Parsing Layer ]
-│
-▼
-[ SOFT Virtual Register & Domain Memory Tracker ]
-│
-▼
-[ RAIN Multi-Arch Macro Machine ]
-│
-┌─────────────────┼─────────────────┐
-▼                 ▼                 ▼
-[ x86_64 ]       [ ARM64 ]        [ RISC-V ]
-(Intel/AMD)    (Apple Silicon)  (Custom 2.4GHz SoC)
-(REX/ModRM)    (32-bit Scaled)   (Standard RV64GC)
+```
+         [ User-Defined Dynamic Assembly Instructions ]
+                               │
+                               ▼
+               [ RAIN Macro Compilation Pipeline ]
+                               │
+     ┌─────────────────────────┼─────────────────────────┐
+     ▼                         ▼                         ▼
+[ x86_64 ]                 [ ARM64 ]                 [ RISC-V ]
+
+```
+
+(Intel / AMD)             (Apple Silicon)          (Custom 64-bit SoC)
+(REX/ModRM/SIB)            (32-bit Encoded)          (Standard RV64GC)
 
 ```
 
 ---
 
-## 🏗️ SOFT Interface: Virtual Architecture Specification
+## Core Structures & Memory Management
 
-### 1. The Virtual Register State (Bit-Width Partitioned)
-SOFT abstracts physical registers into hardware-independent structures grouped by bit widths:
-* **8-bit Lanes:** `sA8`, `sB8`, `sC8`, `sD8`
-* **16-bit Lanes:** `sA16`, `sB16`, `sC16`, `sD16`
-* **32-bit Lanes:** `sA32`, `sB32`, `sC32`, `sD32`
-* **64-bit Lanes:** `sA64`, `sB64`, `sC64`, `sD64`
+### 1. The Execution Buffer (`rain_bin_t`)
+A dynamically resizing memory arena tracking accumulated machine byte arrays.
+* `void rain_bin_init(rain_bin_t *bin)`: Resets sizes and safely zeroes memory data pointer parameters.
+* `void rain_bin_free(rain_bin_t *bin)`: Reclaims allocated heap segments without risking system memory leaks.
+* `void rain_bin_append(rain_bin_t *bin, const uint8_t *bytes, size_t len)`: Automatically monitors capacity boundaries, performing standard data vector copying to grow the allocation boundary as instructions assemble.
 
-### 2. Domain-Driven Stack Scoping (`SOFT_CMD`)
-Memory allocation is tracked dynamically via explicit linear memory frames known as **Domains**. Variables belong inside explicit offsets resolved automatically relative to the Stack Pointer (`sp`).
-
-#### Available Commands:
-* `SOFT_NEW_DOMAIN`: Allocates a localized layout tracking grid in memory with explicit size limits.
-* `SOFT_DEL_DOMAIN`: Destroys the domain tracking footprint and adjusts the execution stack pointer depth.
-* `SOFT_NEW_VARIABLE`: Appends an explicit variables block bound inside a defined parent Domain.
-* `SOFT_LOAD_VARIABLE` / `SOFT_SET_VARIABLE`: Memory-to-register and register-to-memory state pipelines.
-* `SOFT_GET_VARIABLE` / `SOFT_GET_VARIABLE_PTR`: Extracts data payloads or direct hardware physical frame addresses.
-* `SOFT_ADD` / `SOFT_SUB` / `SOFT_MUL` / `SOFT_DIV`: Hardware math wrappers with transparent immediate fallback management.
-* `SOFT_IF` / `SOFT_WHILE` / `SOFT_ELSE` / `SOFT_ELIF`: High-level structural jump mapping.
-* `SOFT_PUSH` / `SOFT_POP`: Directly interact with the architectural system pipeline stack layer.
+### 2. Universal Operands System (`rain_operand_t`)
+Strict algebraic types defining command input targets:
+* `RAIN_OP_REG`: Points directly to an architecture-specific physical hardware register core.
+* `RAIN_OP_IMM`: Packs immediate signed or unsigned constants into hardware-compliant offsets.
+* `RAIN_OP_MEM`: Sets base register memory maps combined with user-defined bit offset displacements.
 
 ---
 
-## 🌧️ RAIN Interface: Comprehensive Instruction Reference
+## Architecture Instruction Specifications
 
-### A. x86_64 Target Compiler (`rain_x86_64_compiler`)
-* **Opcodes:** `mov`, `add`, `sub`, `mul`, `div`, `push`, `pop`, `ret`, `xor`, `cmp`, `jmp`, `jz`, `je`, `jl`, `jg`, `call`.
-* **Hardware Mappings:** Directly translates parameters into physical Intel/AMD hardware structures: `rax`, `rcx`, `rdx`, `rbx`, `rsp`, `rbp`, `rsi`, `rdi`, `r8`-`r15` (and lower structural registers like `eax`, `ax`, `al`).
+### A. Intel / AMD x86_64 Compiler Platform
+* **Supported Commands:** `mov`, `add`, `sub`, `mul`, `div`, `push`, `pop`, `ret` (`0xC3`), `xor`, `cmp`, `jmp`, `jz`, `je`, `jl`, `jg`, `call`.
+* **Register Matrix Support:** Fully mapped from 8-bit registers up to complete 64-bit hardware footprints:
+  * *64-bit Registers:* `rain_x86_64_rax`, `rcx`, `rdx`, `rbx`, `rsp`, `rbp`, `rsi`, `rdi`, `r8` through `r15`.
+  * *32-bit Downscales:* `rain_x86_64_eax`, `ecx`, `edx`, `ebx`, etc.
+  * *16-bit Downscales:* `rain_x86_64_ax`, `cx`, `dx`, `bx`, etc.
+  * *8-bit Downscales:* `rain_x86_64_al`, `cl`, `dl`, `bl`.
 
-### B. ARM64 Target Compiler (`rain_arm64_compiler`)
-* **Opcodes:** `mov`, `add`, `sub`, `mul` (utilizes native 32-bit `MADD` masking pipelines), `div` (`SDIV`/`UDIV` selection), `ldr`, `str`, `ret`, `blr` (Branch with Link to Register).
-* **Hardware Mappings:** `x0` through `x30` core general-purpose lanes, `sp` (Stack Pointer), and `xzr` (Zero Register).
+### B. ARM64 / AArch64 Compiler Platform
+* **Supported Commands:** `mov` (supporting internal bit shifts), `add`, `sub`, `mul` (mapped to native hardware `MADD` bit fields), `div` (`SDIV`/`UDIV`), `ldr` (Load Register), `str` (Store Register), `ret` (`0xD65F03C0`), `blr` (Branch with Link to Register).
+* **Register Matrix Support:** * *General Purpose:* `rain_arm64_x0` directly through to `rain_arm64_x30`.
+  * *System Registers:* `rain_arm64_sp` (Stack Pointer) and `rain_arm64_xzr` (Hardwired Zero Register).
 
-### C. RISC-V 64 Target Compiler (`rain_riscv_compiler`)
-* **Opcodes:** `add`, `addi`, `sub`, `mul`, `div`, `lw`, `ld`, `sw`, `sd`, `jal`, `jalr`, `ret`, `ecall`, `nop`, `li` (Load Immediate pseudo-instruction handler block).
-* **Hardware Mappings:** Fully compliant with RISC-V ABI conventions: `x0` (`zero`), `x1` (`ra`), `x2` (`sp`), parameters `x10`-`x17` (`a0`-`a7`), spanning cleanly up to physical `x31`.
+### C. RISC-V 64-bit Platform (RV64GC)
+* **Supported Commands:** `add`, `addi`, `sub`, `mul`, `div`, `lw` (Load Word), `ld` (Load Doubleword), `sw` (Store Word), `sd` (Store Doubleword), `jal` (Jump and Link), `jalr` (Jump and Link Register), `ret` (`0x00008067`), `ecall` (System Trap Environment Call), `nop` (`0x00000013`), `li` (Load Immediate wrapper).
+* **Register Matrix Support:** Compliant with RISC-V hardware ABI definitions:
+  * `rain_riscv_x0` / `zero` (Hardwired Constant Zero).
+  * `rain_riscv_x1` / `ra` (Function Call Return Link Address).
+  * `rain_riscv_x2` / `sp` (Active System Stack Pointer).
+  * Parameter Passing Lanes: `rain_riscv_x10` through `rain_riscv_x17` (`a0` to `a7`), extending cleanly out through register token `rain_riscv_x31`.
 
 ---
 
-## 💻 Full System Integration Examples
+## Standard Integration Example (JIT Compilation + Native FFI Call)
 
-### Example 1: Programming via C Structures (`soft-asm.c`)
-You can programmatically compose structural compilation blocks to multi-target your build array natively:
+This production-grade, compilable verification example (`rain_demo.c`) details how to initiate execution buffers, write architecture-independent structural logic, and trigger a host callback via the **new native FFI interface**.
 
 ```c
-#include "soft.h"
 #include <stdio.h>
+#include "rain.h"
 
-int main() {
-    int64_t size_32 = 32;
-    int64_t size_8  = 8;
-    int64_t initial_val = 100;
-
-    // Build a programmatic array of operations
-    SOFT_ORDER orders[] = {
-        // 1. Initialize a domain stack space called "global_scope"
-        { SOFT_NEW_DOMAIN, (void*[]){"global_scope", &size_32}, (SOFT_TYPE[]){SOFT_TYPE_NAME, SOFT_TYPE_INT}, 2 },
-        // 2. Map a variable "health" inside it
-        { SOFT_NEW_VARIABLE, (void*[]){"health", "global_scope", &size_8}, (SOFT_TYPE[]){SOFT_TYPE_NAME, SOFT_TYPE_NAME, SOFT_TYPE_INT}, 3 },
-        // 3. Mathematical adjustments using virtual registers
-        { SOFT_ADD, (void*[]){"sA64", &initial_val}, (SOFT_TYPE[]){SOFT_TYPE_REG64, SOFT_TYPE_INT}, 2 },
-        // 4. Teardown safely
-        { SOFT_DEL_DOMAIN, (void*[]){"global_scope"}, (SOFT_TYPE[]){SOFT_TYPE_NAME}, 1 }
-    };
-
-    // Emit fully formed machine code binaries for x86_64, ARM64, and RISC-V instantly
-    rain_bin_t x86_bin   = softCompileX86_64(orders, 4);
-    rain_bin_t riscv_bin = softCompileRISC_V(orders, 4);
-    rain_bin_t arm64_bin = softCompileARM64(orders, 4);
-
-    printf("Generated x86_64 Payload size: %zu bytes\\n", x86_bin.size);
-    printf("Generated RISC-V Payload size: %zu bytes\\n", riscv_bin.size);
-
-    rain_bin_free(&x86_bin);
-    rain_bin_free(&riscv_bin);
-    rain_bin_free(&arm64_bin);
-    return 0;
+// The Native Host Function called directly from inside JIT machine bytes
+void native_callback() {
+    printf("[FFI SUCCESS] Securely branched from inside RAIN JIT stream to Host C Engine!\\n");
 }
 
-```
+void render_hex_output(const char *target_arch, const rain_bin_t *bin) {
+    printf("=== %s Target Array Stack (%zu bytes) ===\\n", target_arch, bin->size);
+    for (size_t i = 0; i < bin->size; i++) {
+        printf("%02X ", bin->data[i]);
+    }
+    printf("\\n\\n");
+}
 
-### Example 2: Using the Text-Based Script Assembly Engine
-
-The framework provides an independent tokenizer that reads plain-text structural scripting lines from your file-system.
-
-Create a source file named `script.soft`:
-
-```text
-SOFT_NEW_DOMAIN "main_runtime" 64
-SOFT_ADD sA64 50
-SOFT_SUB sA64 sB64
-SOFT_DEL_DOMAIN "main_runtime"
-
-```
-
-Compile it to raw target bytes directly from your terminal using the built-in parser interface:
-
-```c
-// Compilation interface code inside your host engine setup
 int main() {
-    // Reads text file, parses tokens, resolves variable/stack scopes, and dumps a valid file down to disk
-    // Targets: "x86_64", "arm64", "riscv"
-    soft_compile_file_to_binary("script.soft", "output_payload.bin", "riscv");
+    printf("=== RAIN Multi-Target Emitter Activation Engine ===\\n\\n");
+
+    // CRITICAL: Bind the text identifier to the memory layout address map
+    rain_register_c_func("native_callback", (void*)&native_callback);
+
+    // ------------------------------------------------------------------------
+    // 1. INTEL/AMD x86_64 Pipeline Compilation Flow
+    // ------------------------------------------------------------------------
+    rain_bin_t x86_program;
+    rain_bin_init(&x86_program);
+
+    // mov rax, 42
+    rain_x86_64_compiler(&x86_program, rain_x86_64_mov, rain_x86_64_rax, rain_x86_64_imd(42));
+    // add rax, rcx
+    rain_x86_64_compiler(&x86_program, rain_x86_64_add, rain_x86_64_rax, rain_x86_64_rcx);
+    
+    // CALL FFI BRIDGE: Safely escapes JIT to run host C functions
+    rain_x86_call_c(&x86_program, "native_callback");
+
+    // ret
+    rain_x86_64_compiler(&x86_program, rain_x86_64_ret);
+    render_hex_output("x86_64 Architecture", &x86_program);
+    rain_bin_free(&x86_program);
+
+    // ------------------------------------------------------------------------
+    // 2. ARM64 (AArch64 / Apple Silicon / Raspberry Pi) Flow
+    // ------------------------------------------------------------------------
+    rain_bin_t arm64_program;
+    rain_bin_init(&arm64_program);
+
+    // mov x0, 100
+    rain_arm64_compiler(&arm64_program, rain_arm64_mov, rain_arm64_x0, rain_arm64_imd(100));
+    // add x0, x0, x1
+    rain_arm64_compiler(&arm64_program, rain_arm64_add, rain_arm64_x0, rain_arm64_x0, rain_arm64_x1);
+    
+    // CALL FFI BRIDGE
+    rain_arm64_call_c(&arm64_program, "native_callback");
+
+    // ret
+    rain_arm64_compiler(&arm64_program, rain_arm64_ret);
+    render_hex_output("ARM64 Architecture", &arm64_program);
+    rain_bin_free(&arm64_program);
+
+    // ------------------------------------------------------------------------
+    // 3. RISC-V (RV64GC Custom Silicon / Hardware Emulators) Flow
+    // ------------------------------------------------------------------------
+    rain_bin_t riscv_program;
+    rain_bin_init(&riscv_program);
+
+    // addi x10, x10, 50 -> (a0 = a0 + 50)
+    rain_riscv_compiler(&riscv_program, rain_riscv_addi, rain_riscv_x10, rain_riscv_x10, rain_riscv_imd(50));
+    
+    // CALL FFI BRIDGE
+    rain_riscv_call_c(&riscv_program, "native_callback");
+
+    // ret
+    rain_riscv_compiler(&riscv_program, rain_riscv_ret);
+    render_hex_output("RISC-V 64 Target", &riscv_program);
+    rain_bin_free(&riscv_program);
+
     return 0;
 }
 
@@ -160,21 +175,19 @@ int main() {
 
 ---
 
-## ⚙️ JIT Execution Configuration Requirements
+## Operating System JIT Execution Policies
 
-When executing the compiled outputs in memory, you must mark your allocation pools executable on your host operating system platform:
+To safely execute generated machine byte arrays on host operating platforms, you must request pages with absolute executable verification rights:
 
-* **Linux / POSIX Environments:** Use `mmap` with flags `PROT_READ | PROT_WRITE | PROT_EXEC`. If using split-mapping structures, write code to your write-buffer, then execute `mprotect` to switch modes safely.
-* **Instruction Cache Flushing:** On **ARM64** and **RISC-V** platforms, always invoke standard hardware cache sync primitives (`__builtin___clear_cache`) across your execution buffer borders before passing the program counter (`PC`) straight into the generated arrays.
+* **Linux / FreeBSD System Calls:** Utilize `mmap` mapping parameters containing flags `PROT_READ | PROT_WRITE | PROT_EXEC`. If kernel security systems enforce explicit `W^X` policies, allocate distinct write/execute aliased addresses or leverage `mprotect` toggles between composition and thread invocation boundaries.
+* **Hardware Instruction Cache Synchronization:** On **ARM64** and **RISC-V** processor rings, the data cache and instruction cache are not hardware-coherent for dynamic code. You must explicitly flush data cache buffers using standard compiler hooks like `__builtin___clear_cache(start, end)` before moving the hardware Program Counter (`PC`) pointer into your `rain_bin_t` structure space.
 
 ---
 
-## 📄 License
+## License
 
-This compilation framework is distributed as open-source infrastructure under the **GNU General Public License v3.0 (GPLv3)**. Please consult explicit licensing texts for deployment compliance rights.
+This project is licensed under the **GNU General Public License v3.0 (GPLv3)** - feel free to review included repository headers for open-source development compliance rules.
 
 ```
-
-Bu dosya, projenizi hem **basit bir JIT makro motoru** hem de **bütünsel bir dosya/metin tabanlı derleyici mimarisi** olarak ele alır. GitHub profilinizde veya projenizin vitrininde üstün bir mühendislik dökümantasyonu olarak sergilenmeye hazırdır. 😉
 
 ```
